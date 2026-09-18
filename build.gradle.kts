@@ -9,7 +9,7 @@ plugins {
 }
 
 tasks.named<Wrapper>("wrapper") {
-  gradleVersion = "8.7"
+  gradleVersion = "9.3.1"
   distributionType = Wrapper.DistributionType.BIN
   validateDistributionUrl = true
 }

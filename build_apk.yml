@@ -86,6 +86,12 @@ jobs:
           fi
           chmod +x gradlew
 
+      - name: Ensure Gradle Wrapper is 9.3.1
+        working-directory: ${{ steps.locate-project.outputs.project_path }}
+        run: |
+          ./gradlew wrapper --gradle-version 9.3.1 --distribution-type bin || true
+          chmod +x gradlew
+
       - name: Build Debug APK with Gradlew
         working-directory: ${{ steps.locate-project.outputs.project_path }}
         run: ./gradlew assembleDebug --no-daemon --stacktrace
