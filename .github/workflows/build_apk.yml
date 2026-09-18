@@ -27,15 +27,12 @@ jobs:
 
       - name: Prepare Keystores & Environment
         run: |
-          # 1. Create debug keystore if missing
           if [ ! -f debug.keystore ]; then
             keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           fi
-          # 2. Create release keystore if missing
           if [ ! -f my-upload-key.jks ]; then
             keytool -genkey -v -keystore my-upload-key.jks -storepass android -alias upload -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Release,O=Android,C=US"
           fi
-          # 3. Ensure environment template exists for Secret Gradle Plugin
           if [ ! -f .env ]; then
             touch .env
           fi
@@ -43,8 +40,12 @@ jobs:
             touch .env.example
           fi
 
-      - name: Grant Execute Permission for Gradlew
-        run: chmod +x gradlew
+      - name: Ensure Gradlew Exists & Grant Permission
+        run: |
+          if [ ! -f gradlew ]; then
+            gradle wrapper
+          fi
+          chmod +x gradlew
 
       - name: Build Standalone Release APK
         env:
