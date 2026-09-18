@@ -1,12 +1,19 @@
 package com.example.ui.state
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.example.data.SampleData
+import com.example.data.error.AppError
+import com.example.data.error.ErrorCategory
+import com.example.data.error.GlobalExceptionHandler
+import com.example.data.error.SyncStatus
 import com.example.model.*
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 
 enum class Screen {
     DASHBOARD,
@@ -88,6 +95,24 @@ class FoodoraViewModel : ViewModel() {
 
     private val _notifications = MutableStateFlow(SampleData.notifications)
     val notifications: StateFlow<List<NotificationItem>> = _notifications.asStateFlow()
+
+    // Global Exception, API & Firebase Sync Management
+    private val _currentError = MutableStateFlow<AppError?>(null)
+    val currentError: StateFlow<AppError?> = _currentError.asStateFlow()
+
+    private val _syncStatus = MutableStateFlow(SyncStatus.SYNCED)
+    val syncStatus: StateFlow<SyncStatus> = _syncStatus.asStateFlow()
+
+    private val _isSyncing = MutableStateFlow(false)
+    val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
+
+    private val _lastSyncTimestamp = MutableStateFlow(System.currentTimeMillis())
+    val lastSyncTimestamp: StateFlow<Long> = _lastSyncTimestamp.asStateFlow()
+
+    private val _errorHistory = MutableStateFlow<List<AppError>>(emptyList())
+    val errorHistory: StateFlow<List<AppError>> = _errorHistory.asStateFlow()
+
+    private var lastFailedAction: (suspend () -> Unit)? = null
 
     // Daily Sales Analytics & Recharts Comparison
     private val _selectedComparisonPeriod = MutableStateFlow(ComparisonPeriod.YESTERDAY)
@@ -536,5 +561,91 @@ class FoodoraViewModel : ViewModel() {
 
     fun clearAllNotifications() {
         _notifications.value = emptyList()
+    }
+
+    // Global Exception Handling & Cloud Synchronization
+    fun dismissError() {
+        _currentError.value = null
+    }
+
+    fun handleException(
+        throwable: Throwable,
+        contextInfo: String = "App Operation",
+        onRetry: (suspend () -> Unit)? = null
+    ) {
+        lastFailedAction = onRetry
+        val error = GlobalExceptionHandler.parseException(
+            throwable = throwable,
+            contextInfo = contextInfo,
+            language = _currentLanguage.value
+        )
+        _currentError.value = error
+        _syncStatus.value = if (error.category == ErrorCategory.NETWORK_OFFLINE) SyncStatus.OFFLINE else SyncStatus.FAILED
+        _errorHistory.update { listOf(error) + it.take(25) }
+    }
+
+    fun retryLastFailedOperation() {
+        val action = lastFailedAction
+        _currentError.value = null
+        if (action != null) {
+            viewModelScope.launch {
+                action.invoke()
+            }
+        } else {
+            triggerCloudSync()
+        }
+    }
+
+    fun triggerCloudSync() {
+        if (_isSyncing.value) return
+        _isSyncing.value = true
+        _syncStatus.value = SyncStatus.SYNCING
+
+        viewModelScope.launch {
+            val result = GlobalExceptionHandler.safeFirebaseCall(
+                operationName = "Firestore Operations Sync",
+                language = _currentLanguage.value,
+                onError = { appError ->
+                    _currentError.value = appError
+                    _syncStatus.value = SyncStatus.FAILED
+                    _errorHistory.update { listOf(appError) + it.take(25) }
+                }
+            ) {
+                delay(1200)
+                _lastSyncTimestamp.value = System.currentTimeMillis()
+                true
+            }
+
+            if (result.isSuccess) {
+                _syncStatus.value = SyncStatus.SYNCED
+                _currentError.value = null
+            }
+            _isSyncing.value = false
+        }
+    }
+
+    fun simulateException(category: ErrorCategory) {
+        val simulatedThrowable: Throwable = when (category) {
+            ErrorCategory.NETWORK_OFFLINE -> java.net.UnknownHostException("Unable to resolve host 'foodora-cloud.firebaseio.com': No address associated with hostname")
+            ErrorCategory.NETWORK_TIMEOUT -> java.net.SocketTimeoutException("Read timed out after 10000ms while syncing orders with api.foodora.io")
+            ErrorCategory.FIREBASE_AUTH -> com.google.firebase.auth.FirebaseAuthException("ERROR_INVALID_CREDENTIAL", "The Firebase user token is expired or revoked by security rules.")
+            ErrorCategory.FIREBASE_FIRESTORE_SYNC -> com.google.firebase.firestore.FirebaseFirestoreException("The Cloud Firestore service is temporarily unavailable in this cluster.", com.google.firebase.firestore.FirebaseFirestoreException.Code.UNAVAILABLE)
+            ErrorCategory.FIREBASE_QUOTA -> com.google.firebase.firestore.FirebaseFirestoreException("Cloud Firestore quota exceeded. Limit is 50,000 writes/day.", com.google.firebase.firestore.FirebaseFirestoreException.Code.RESOURCE_EXHAUSTED)
+            ErrorCategory.SERVER_ERROR -> retrofit2.HttpException(retrofit2.Response.error<Any>(503, okhttp3.ResponseBody.create(null, "Gateway Timeout / Service Unavailable")))
+            ErrorCategory.CLIENT_ERROR -> retrofit2.HttpException(retrofit2.Response.error<Any>(400, okhttp3.ResponseBody.create(null, "Bad Request: Invalid Payload")))
+            ErrorCategory.UNKNOWN -> RuntimeException("Unexpected internal exception in sync dispatcher")
+        }
+
+        handleException(
+            throwable = simulatedThrowable,
+            contextInfo = "Test: ${category.name}",
+            onRetry = {
+                triggerCloudSync()
+            }
+        )
+    }
+
+    fun clearErrorHistory() {
+        _errorHistory.value = emptyList()
     }
 }

@@ -40,6 +40,8 @@ fun FoodoraTopBar(
     val currentLanguage by viewModel.currentLanguage.collectAsState()
     val isDarkMode by viewModel.isDarkMode.collectAsState()
     val notifications by viewModel.notifications.collectAsState()
+    val syncStatus by viewModel.syncStatus.collectAsState()
+    val isSyncing by viewModel.isSyncing.collectAsState()
     val unreadCount = notifications.count { !it.isRead }
 
     var showRoleDialog by remember { mutableStateOf(false) }
@@ -108,11 +110,18 @@ fun FoodoraTopBar(
                 }
             }
 
-            // Right actions: Active Role, Notifications, Lang, Dark/Light
+            // Right actions: Cloud Sync, Active Role, Notifications, Lang, Dark/Light
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
+                // Cloud Sync Status Pill
+                CloudSyncStatusChip(
+                    status = syncStatus,
+                    isSyncing = isSyncing,
+                    onClick = { viewModel.triggerCloudSync() }
+                )
+
                 // Role Badge Button
                 Surface(
                     onClick = { showRoleDialog = true },

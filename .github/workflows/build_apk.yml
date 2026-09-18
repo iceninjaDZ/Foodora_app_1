@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build & Upload Android APK
 
 on:
   push:
@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [ "main", "master" ]
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -15,6 +18,27 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+
+      - name: Detect Project Directory
+        id: locate-project
+        run: |
+          if [ -f "build.gradle.kts" ] || [ -f "build.gradle" ]; then
+            echo "project_path=." >> $GITHUB_OUTPUT
+            echo "Found Android project at repository root: ."
+          elif [ -d "Foodora_app_1" ] && ([ -f "Foodora_app_1/build.gradle.kts" ] || [ -f "Foodora_app_1/build.gradle" ]); then
+            echo "project_path=Foodora_app_1" >> $GITHUB_OUTPUT
+            echo "Found Android project in Foodora_app_1 directory."
+          else
+            FOUND_FILE=$(find . -maxdepth 2 -name "settings.gradle.kts" -o -name "settings.gradle" | head -n 1)
+            if [ -n "$FOUND_FILE" ]; then
+              DIR=$(dirname "$FOUND_FILE")
+              echo "project_path=$DIR" >> $GITHUB_OUTPUT
+              echo "Found Android project in: $DIR"
+            else
+              echo "project_path=." >> $GITHUB_OUTPUT
+              echo "Falling back to repository root: ."
+            fi
+          fi
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -26,39 +50,52 @@ jobs:
         uses: gradle/actions/setup-gradle@v3
 
       - name: Prepare Keystores & Environment
-        working-directory: Foodora_app_1
+        working-directory: ${{ steps.locate-project.outputs.project_path }}
         run: |
-          # 1. Create debug keystore if missing
+          # 1. Restore debug.keystore from base64 if available, or generate via keytool
           if [ ! -f debug.keystore ]; then
+            if [ -f debug.keystore.base64 ]; then
+              echo "Restoring debug.keystore from base64..."
+              base64 -d debug.keystore.base64 > debug.keystore || true
+            fi
+          fi
+          if [ ! -f debug.keystore ]; then
+            echo "Generating fallback debug.keystore..."
             keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           fi
+
           # 2. Create release keystore if missing
           if [ ! -f my-upload-key.jks ]; then
+            echo "Generating upload keystore..."
             keytool -genkey -v -keystore my-upload-key.jks -storepass android -alias upload -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Upload,O=Android,C=US"
           fi
+
           # 3. Ensure environment files exist for Secrets Gradle Plugin
-          if [ ! -f .env ]; then
-            touch .env
-          fi
           if [ ! -f .env.example ]; then
             touch .env.example
           fi
+          if [ ! -f .env ]; then
+            cp .env.example .env 2>/dev/null || touch .env
+          fi
 
-      - name: Ensure Gradlew Exists & Set Permissions
-        working-directory: Foodora_app_1
+      - name: Grant Execute Permission to Gradlew
+        working-directory: ${{ steps.locate-project.outputs.project_path }}
         run: |
-          if [ ! -s gradlew ]; then
+          if [ ! -f gradlew ]; then
             gradle wrapper || true
           fi
-          chmod +x gradlew || true
+          chmod +x gradlew
 
       - name: Build Debug APK with Gradlew
-        working-directory: Foodora_app_1
-        run: bash gradlew assembleDebug --no-daemon
+        working-directory: ${{ steps.locate-project.outputs.project_path }}
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Foodora-manager-debug-apk
-          path: Foodora_app_1/app/build/outputs/apk/debug/*.apk
+          path: |
+            ${{ steps.locate-project.outputs.project_path }}/app/build/outputs/apk/debug/*.apk
+            **/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
           retention-days: 14

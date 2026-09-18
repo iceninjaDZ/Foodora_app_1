@@ -11,10 +11,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.data.error.AppError
 import com.example.model.Language
 import com.example.ui.components.AllModulesSheet
+import com.example.ui.components.ErrorDetailsDialog
 import com.example.ui.components.FoodoraBottomNav
 import com.example.ui.components.FoodoraTopBar
+import com.example.ui.components.GlobalErrorBanner
 import com.example.ui.screens.*
 import com.example.ui.state.FoodoraViewModel
 import com.example.ui.state.Screen
@@ -46,7 +49,9 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun FoodoraApp(viewModel: FoodoraViewModel) {
     val currentScreen by viewModel.currentScreen.collectAsState()
+    val currentError by viewModel.currentError.collectAsState()
     var showModulesSheet by remember { mutableStateOf(false) }
+    var selectedErrorForDetails by remember { mutableStateOf<AppError?>(null) }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -67,27 +72,49 @@ fun FoodoraApp(viewModel: FoodoraViewModel) {
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            when (currentScreen) {
-                Screen.DASHBOARD -> DashboardScreen(viewModel)
-                Screen.POS -> PosScreen(viewModel)
-                Screen.KDS -> KdsScreen(viewModel)
-                Screen.TABLES -> TablesScreen(viewModel)
-                Screen.MENU -> MenuScreen(viewModel)
-                Screen.INVENTORY -> InventoryScreen(viewModel)
-                Screen.DELIVERY -> DeliveryScreen(viewModel)
-                Screen.CRM -> CrmScreen(viewModel)
-                Screen.REPORTS -> ReportsScreen(viewModel)
-                Screen.ANALYTICS -> DailyAnalyticsScreen(viewModel)
-                Screen.STAFF -> StaffScreen(viewModel)
-                Screen.QR_MENU -> QrMenuScreen(viewModel)
-                Screen.SETTINGS -> SettingsScreen(viewModel)
+            // Global Exception & Sync Failure Feedback Banner
+            GlobalErrorBanner(
+                error = currentError,
+                onDismiss = { viewModel.dismissError() },
+                onRetry = { viewModel.retryLastFailedOperation() },
+                onShowDetails = { error -> selectedErrorForDetails = error }
+            )
+
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) {
+                when (currentScreen) {
+                    Screen.DASHBOARD -> DashboardScreen(viewModel)
+                    Screen.POS -> PosScreen(viewModel)
+                    Screen.KDS -> KdsScreen(viewModel)
+                    Screen.TABLES -> TablesScreen(viewModel)
+                    Screen.MENU -> MenuScreen(viewModel)
+                    Screen.INVENTORY -> InventoryScreen(viewModel)
+                    Screen.DELIVERY -> DeliveryScreen(viewModel)
+                    Screen.CRM -> CrmScreen(viewModel)
+                    Screen.REPORTS -> ReportsScreen(viewModel)
+                    Screen.ANALYTICS -> DailyAnalyticsScreen(viewModel)
+                    Screen.STAFF -> StaffScreen(viewModel)
+                    Screen.QR_MENU -> QrMenuScreen(viewModel)
+                    Screen.SETTINGS -> SettingsScreen(viewModel)
+                }
             }
         }
+    }
+
+    // Technical Error Diagnostics Dialog
+    selectedErrorForDetails?.let { error ->
+        ErrorDetailsDialog(
+            error = error,
+            onDismiss = { selectedErrorForDetails = null }
+        )
     }
 
     // All Modules Sheet
