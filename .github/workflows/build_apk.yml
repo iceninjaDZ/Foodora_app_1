@@ -13,49 +13,52 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
 
-    - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v3
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
 
-    - name: Prepare Keystores & Environment
-      working-directory: Foodora_app_1
-      run: |
-        if [ ! -f debug.keystore ]; then
-          keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-        fi
-        if [ ! -f my-upload-key.jks ]; then
-          keytool -genkey -v -keystore my-upload-key.jks -storepass android -alias upload -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Upload,O=Android,C=US"
-        fi
-        if [ ! -f .env ]; then
-          touch .env
-        fi
-        if [ ! -f .env.example ]; then
-          touch .env.example
-        fi
+      - name: Prepare Keystores & Environment
+        working-directory: Foodora_app_1
+        run: |
+          # 1. Create debug keystore if missing
+          if [ ! -f debug.keystore ]; then
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
+          # 2. Create release keystore if missing
+          if [ ! -f my-upload-key.jks ]; then
+            keytool -genkey -v -keystore my-upload-key.jks -storepass android -alias upload -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Upload,O=Android,C=US"
+          fi
+          # 3. Ensure environment files exist for Secrets Gradle Plugin
+          if [ ! -f .env ]; then
+            touch .env
+          fi
+          if [ ! -f .env.example ]; then
+            touch .env.example
+          fi
 
-    - name: Ensure Gradlew Exists & Grant Permission
-      working-directory: Foodora_app_1
-      run: |
-        if [ ! -f gradlew ]; then
-          gradle wrapper
-        fi
-        chmod +x gradlew || true
+      - name: Ensure Gradlew Exists & Set Permissions
+        working-directory: Foodora_app_1
+        run: |
+          if [ ! -s gradlew ]; then
+            gradle wrapper || true
+          fi
+          chmod +x gradlew || true
 
-    - name: Build Debug APK
-      working-directory: Foodora_app_1
-      run: bash gradlew assembleDebug --no-daemon
+      - name: Build Debug APK with Gradlew
+        working-directory: Foodora_app_1
+        run: bash gradlew assembleDebug --no-daemon
 
-    - name: Upload Debug APK Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: Foodora-manager-debug-apk
-        path: Foodora_app_1/app/build/outputs/apk/debug/*.apk
-        retention-days: 14
+      - name: Upload Debug APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Foodora-manager-debug-apk
+          path: Foodora_app_1/app/build/outputs/apk/debug/*.apk
+          retention-days: 14
