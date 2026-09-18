@@ -1,0 +1,71 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build & Upload Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Prepare Keystores & Environment
+        run: |
+          # 1. Create debug keystore if missing
+          if [ ! -f debug.keystore ]; then
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
+          # 2. Create release keystore if missing
+          if [ ! -f my-upload-key.jks ]; then
+            keytool -genkey -v -keystore my-upload-key.jks -storepass android -alias upload -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Foodora Manager Release,O=Foodora,C=US"
+          fi
+          # 3. Ensure environment template exists for Secrets Gradle Plugin
+          if [ ! -f .env ]; then
+            touch .env
+          fi
+          if [ ! -f .env.example ]; then
+            touch .env.example
+          fi
+
+      - name: Build Standalone Release APK
+        env:
+          KEYSTORE_PATH: my-upload-key.jks
+          STORE_PASSWORD: android
+          KEY_PASSWORD: android
+        run: |
+          chmod +x gradlew 2>/dev/null || true
+          gradle assembleRelease --no-daemon
+
+      - name: Build Debug APK
+        run: |
+          gradle assembleDebug --no-daemon
+
+      - name: Upload Release APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: foodora-manager-release-apk
+          path: app/build/outputs/apk/release/*.apk
+          retention-days: 14
+
+      - name: Upload Debug APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: foodora-manager-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 14

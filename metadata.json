@@ -1,0 +1,6 @@
+{
+  "name": "Foodora Manager",
+  "description": "All-in-one restaurant and food service management platform with POS, KDS, inventory, tables, delivery, and analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
